@@ -10,6 +10,7 @@ const byte pinDir = 6;      // pin for direction of motor driver
 uint16_t   gearRatio = 150;
 uint8_t    ppr = 11;
 bool       pwmHighRes = true;  // if true, 10 bit pwm is used else 8 bit
+bool       reverseDir = false;
 
 // counter variables
 volatile int currentCount = 0;
@@ -24,10 +25,18 @@ float setpointAngle = 0;
 String inString = "";
 
 // pwm stuff
-uint16_t pwm = 0;
+float pwm = 0.0;
+float pwmMax;
 
 // initialize a pid controller
-PID pid(0.1, 0.01, 0.0, true, 0.0, 1.0, 0.0001);
+float minEffort = -1.0;
+float maxEffort = 1.0;
+float tol = 5.0;
+float pGain = 0.0003;
+float iGain = 0.0001;
+float dGain = 0.00001;
+bool  windupGuard = true;
+PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
 
  void setup()
 {
@@ -36,15 +45,20 @@ PID pid(0.1, 0.01, 0.0, true, 0.0, 1.0, 0.0001);
     Serial.println("Configure PWM ...");
     if (pwmHighRes){
         Serial.println("High resolution PWM");
+        pwmMax = 1023;
     }
     else{
         Serial.println("Low resolution PWM");
+        pwmMax = 255;
     }
 
     // configure the pwm speed and resolution
     configPWM();
 
+    // define pins
     pinMode(pinPWM, OUTPUT);
+    pinMode(pinDir, OUTPUT);
+
 
     // initialize encoder pins and find their initial state
     FastGPIO::Pin<pinA>::setInputPulledUp();
@@ -74,8 +88,10 @@ void loop()
 {
     readSerial();
     calculateCount();
+    calculateAngle();
     calculatePWM();
-    //printcurrentCount(currentCount);
+    //Serial.println(pwm);
+    //printValues();
 }
 
 void readSerial()
@@ -95,19 +111,46 @@ void readSerial()
 
 void calculateCount()
 {
-    setpointCount = int((setpointAngle - initialAngle) * ppr * gearRatio * 4 / 360);
+    setpointCount = ((setpointAngle - initialAngle) * ppr * gearRatio * 4 / 360.0);
+}
+
+void calculateAngle()
+{
+    currentAngle = 360.0 * currentCount / ppr / gearRatio / 4;
 }
 
 void calculatePWM()
 {
-    pwm = pid.update(setpointCount, currentCount);
+    // calculate the control effort and map it to the current pwm bit resolution
+    pwm = pid.update(setpointCount, currentCount) * pwmMax;
+
+    // account for direction change
+    if (pwm < 0.0){
+        pwm *= -1;
+        reverseDir = true;
+        digitalWrite(pinDir, 'LOW');
+    }
+    else{
+        reverseDir = false;
+        digitalWrite(pinDir, 'HIGH');
+    }
 }
 
-void printcurrentCount(int cnt)
+void printValues()
 {
-    if (cnt%10 == 0){
-        Serial.print("Position: ");
-        Serial.println(cnt);
+    if (currentCount%10 == 0){
+        Serial.print("Setpoint Count: ");
+        Serial.print(setpointCount);
+        Serial.print("  Current Count: ");
+        Serial.print(currentCount);
+        Serial.print("  Setpoint Angle: ");
+        Serial.print(setpointAngle);
+        Serial.print("  Current Angle: ");
+        Serial.print(currentAngle);
+        Serial.print("  Dir Reverse: ");
+        Serial.print(reverseDir);
+        Serial.print("  PWM: ");
+        Serial.println(pwm);
     }
 }
 
@@ -162,6 +205,8 @@ void risingEdgeB()
     }
     attachInterrupt(digitalPinToInterrupt(pinB), fallingEdgeB, FALLING);
 }
+
+// configure pwm
 void configPWM()
 {
     // if high res pwm is used
