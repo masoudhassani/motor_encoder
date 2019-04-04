@@ -5,16 +5,18 @@
 const byte pinA = 2;   // this is the intrupt pin and the signal A of encoder
 const byte pinB = 3;   // this is the intrupt pin and the signal B of encoder
 const byte pinPWM = 10; // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
-const byte pinCurrent = 15; // analog pin to read motor current
-const byte pinDir = 6;      // pin for direction of motor driver
+const byte pinEnable = 4;  // motor enable pin
+const byte pinCurrent = 16; // analog pin to read motor current
+const byte pinDir1 = 7;      // pin for direction of motor driver
+const byte pinDir2 = 8;      // pin for direction of motor driver
 uint16_t   gearRatio = 150;
 uint8_t    ppr = 11;
 bool       pwmHighRes = true;  // if true, 10 bit pwm is used else 8 bit
 bool       reverseDir = false;
 
 // counter variables
-volatile int currentCount = 0;
-int setpointCount = 0;
+volatile int32_t currentCount = 0;
+int32_t setpointCount = 0;
 
 // motor shaft angle
 float currentAngle = 0;
@@ -32,9 +34,9 @@ float pwmMax;
 float minEffort = -1.0;
 float maxEffort = 1.0;
 float tol = 5.0;
-float pGain = 0.0003;
-float iGain = 0.0001;
-float dGain = 0.00001;
+float pGain = 0.001;
+float iGain = 0.005;
+float dGain = 0.000000;
 bool  windupGuard = true;
 PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
 
@@ -57,8 +59,10 @@ PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
 
     // define pins
     pinMode(pinPWM, OUTPUT);
-    pinMode(pinDir, OUTPUT);
-
+    pinMode(pinDir1, OUTPUT);
+    pinMode(pinDir2, OUTPUT);
+    pinMode(pinEnable, OUTPUT);
+    digitalWrite(pinEnable, HIGH);
 
     // initialize encoder pins and find their initial state
     FastGPIO::Pin<pinA>::setInputPulledUp();
@@ -90,6 +94,7 @@ void loop()
     calculateCount();
     calculateAngle();
     calculatePWM();
+    analogWrite(pinPWM, pwm);
     //Serial.println(pwm);
     //printValues();
 }
@@ -107,6 +112,30 @@ void readSerial()
             inString = "";
         }
     }
+    // if (Serial.available()){
+    //     byte inChar = Serial.read();
+    //     //String content;
+    //     if (inChar == 'p'){
+    //         while (inChar != '\n'){
+    //             byte inChar = Serial.read();
+    //             inString += (char)inChar;
+    //             Serial.println(inChar);
+    //         }
+    //         pGain = inString.toFloat();
+    //         inString = "";
+    //         Serial.print("P gain changed to ");Serial.println(pGain);
+    //     }
+    //     else if (inChar == 'a'){
+    //         while (inChar != '\n'){
+    //             byte inChar = Serial.read();
+    //             inString += (char)inChar;
+    //         }
+    //         setpointAngle = inString.toFloat();
+    //         inString = "";
+    //         Serial.print("Setpoint angle changed to ");Serial.println(setpointAngle);
+    //     }
+    // }
+
 }
 
 void calculateCount()
@@ -128,17 +157,19 @@ void calculatePWM()
     if (pwm < 0.0){
         pwm *= -1;
         reverseDir = true;
-        digitalWrite(pinDir, 'LOW');
+        digitalWrite(pinDir1, HIGH);
+        digitalWrite(pinDir2, LOW);
     }
     else{
         reverseDir = false;
-        digitalWrite(pinDir, 'HIGH');
+        digitalWrite(pinDir1, LOW);
+        digitalWrite(pinDir2, HIGH);
     }
 }
 
 void printValues()
 {
-    if (currentCount%10 == 0){
+    if (currentCount%2 == 0){
         Serial.print("Setpoint Count: ");
         Serial.print(setpointCount);
         Serial.print("  Current Count: ");
