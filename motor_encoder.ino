@@ -9,7 +9,7 @@ const byte pinEnable = 4;  // motor enable pin
 const byte pinCurrent = 16; // analog pin to read motor current
 const byte pinDir1 = 7;      // pin for direction of motor driver
 const byte pinDir2 = 8;      // pin for direction of motor driver
-uint16_t   gearRatio = 150;
+uint16_t   gearRatio = 155.55; //150; // this value was corrected based on the observation
 uint8_t    ppr = 11;
 bool       pwmHighRes = true;  // if true, 10 bit pwm is used else 8 bit
 bool       reverseDir = false;
@@ -31,15 +31,37 @@ float pwm = 0.0;
 float pwmMax;
 
 // initialize a pid controller
+/*
+large angle diff pid gains:
+float pGain = 0.0008;
+float iGain = 0.007;
+float dGain = 0.0000000;
+*/
+/*
+small angle diff pid gains:
+float pGain = 0.005;
+float iGain = 0.005;
+float dGain = 0.0000000;
+*/
 float minEffort = -1.0;
 float maxEffort = 1.0;
-float tol = 5.0;
-float pGain = 0.001;
+float tol = 4.0;
+// small angle diff gains
+float pGain = 0.005;
 float iGain = 0.005;
-float dGain = 0.000000;
+float dGain = 0.0000000;
+// large angle diff gains
+float pGainLarge = 0.0008;
+float iGainLarge = 0.007;
+float dGainLarge = 0.0000000;
+//gain scheduling parameters.
+float threshSmall = 10.0;
+float threshLarge = 20.0;
+
 bool  windupGuard = true;
 PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
 
+// set up function of arduino, this runs once
  void setup()
 {
     // initialize serial connection
@@ -150,6 +172,9 @@ void calculateAngle()
 
 void calculatePWM()
 {
+    // update gains based on predefined schedule
+    gainScheduling();
+
     // calculate the control effort and map it to the current pwm bit resolution
     pwm = pid.update(setpointCount, currentCount) * pwmMax;
 
@@ -269,4 +294,29 @@ void configPWM()
         Serial.print("TCCR1A: ");Serial.println(TCCR1A, BIN);
         Serial.print("PWM Frequency: ");Serial.println(16000000/8/256);
     }
+}
+
+void gainScheduling()
+{
+    /*
+    before threshSmall, small angle diff gains are used.
+    between threshSmall and threshLarge, there is a linear transition.
+    After threshLarge, the gain of large angle diff is used
+    */
+    float diff = abs(currentAngle - setpointAngle);
+    if (diff <= threshSmall){
+        pid.setGain(pGain, iGain, dGain);
+    }
+    else{
+        if (diff <= threshLarge){
+            float p = pGain + (diff-threshSmall)*((pGainLarge-pGain)/(threshLarge-threshSmall));
+            float i = iGain + (diff-threshSmall)*((iGainLarge-iGain)/(threshLarge-threshSmall));
+            float d = dGain + (diff-threshSmall)*((dGainLarge-dGain)/(threshLarge-threshSmall));
+            pid.setGain(p, i, d);
+        }
+        else{
+            pid.setGain(pGainLarge, iGainLarge, dGainLarge);
+        }
+    }
+
 }
