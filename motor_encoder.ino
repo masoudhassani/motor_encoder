@@ -32,13 +32,13 @@ float pwmMax;
 
 // initialize a pid controller
 /*
-large angle diff pid gains:
+large angle diff pid gains (for 8 volts):
 float pGain = 0.0008;
 float iGain = 0.007;
 float dGain = 0.0000000;
 */
 /*
-small angle diff pid gains:
+small angle diff pid gains (for 8 volts):
 float pGain = 0.005;
 float iGain = 0.005;
 float dGain = 0.0000000;
