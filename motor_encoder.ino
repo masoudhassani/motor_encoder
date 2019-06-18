@@ -1,7 +1,11 @@
 #include <FastGPIO.h>
 #include <PID.h>
+#include <Wire.h>
 
-// motor and driver setup
+// ----------------------- i2c address ---------------------------------
+const int deviceAddress = 0x01;
+
+// ----------------------- motor and driver setup ----------------------
 const byte pinA = 2;   // this is the intrupt pin and the signal A of encoder
 const byte pinB = 3;   // this is the intrupt pin and the signal B of encoder
 const byte pinPWM = 10; // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
@@ -14,35 +18,36 @@ uint8_t    ppr = 11;
 bool       pwmHighRes = true;  // if true, 10 bit pwm is used else 8 bit
 bool       reverseDir = false;
 
-// counter variables
+// ----------------------- counter variables ----------------------
 volatile int32_t currentCount = 0;
 int32_t setpointCount = 0;
 
-// motor shaft angle
+// ----------------------- motor shaft angle ----------------------
 float currentAngle = 0;
 float initialAngle = 0;
 float setpointAngle = 0;
 
-// stuff for serial read
+// ----------------------- stuff for serial read ----------------------
 String inString = "";
 
-// pwm stuff
-float pwm = 0.0;
-float pwmMax;
+// ----------------------- motor current calculated from driver sensor ---------
+float motorCurrent = 0;
 
-// initialize a pid controller
+// ----------------------- pwm stuff ----------------------
 /*
 large angle diff pid gains (for 8 volts):
 float pGain = 0.0008;
 float iGain = 0.007;
 float dGain = 0.0000000;
-*/
-/*
+
 small angle diff pid gains (for 8 volts):
 float pGain = 0.005;
 float iGain = 0.005;
 float dGain = 0.0000000;
 */
+float pwm = 0.0;
+float pwmMax;
+// initialize a pid controller
 float minEffort = -1.0;
 float maxEffort = 1.0;
 float tol = 2.0;
@@ -63,8 +68,49 @@ float threshLarge = 20.0;
 bool  windupGuard = true;
 PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
 
+// ----------------------- data structure for motor data ---------------------
+/*
+define data structure for sending data
+it creates a structure of 64 bytes including 8 indivisual bytes
+and it sends the structure through i2c:
+uint8_t byte0 angle
+uint8_t byte1 velocity
+uint8_t byte2 acceleration
+uint8_t byte3 current
+uint8_t byte4 temp
+uint8_t byte5 empty integer
+uint8_t byte6 boolean set 1
+uint8_t byte7 boolean set 2
+*/
+// data structure setup
+union dataPackage
+    {
+        uint64_t value;
+        struct
+        {
+            uint8_t byte0;
+            uint8_t byte1;
+            uint8_t byte2;
+            uint8_t byte3;
+            uint8_t byte4;
+            uint8_t byte5;
+            uint8_t bool0 : 1;
+            uint8_t bool1 : 1;
+            uint8_t bool2 : 1;
+            uint8_t bool3 : 1;
+            uint8_t bool4 : 1;
+            uint8_t bool5 : 1;
+            uint8_t bool6 : 1;
+            uint8_t bool7 : 1;
+            uint8_t byte7;
+        } data;
+    };
+union dataPackage motorData;
+
+// -------------------------------------------------------------------------
+// -------------------------------------------------------------------------
 // set up function of arduino, this runs once
- void setup()
+void setup()
 {
     // initialize serial connection
     Serial.begin (9600);
@@ -110,13 +156,20 @@ PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
         attachInterrupt(digitalPinToInterrupt(pinB), risingEdgeB, RISING);
     }
 
- }
+    // setup i2c communication
+    Wire.begin(deviceAddress);
+    Wire.onRequest(requestEvent);
+    resetData();  // reset motor data
+}
 
 void loop()
 {
     readSerial();
     calculateCount();
     calculateAngle();
+    calculateVelocity();
+    calculateAcceleration();
+    calculateCurrent();
     calculatePWM();
     analogWrite(pinPWM, pwm);
     //Serial.println(pwm);
@@ -171,6 +224,24 @@ void calculateCount()
 void calculateAngle()
 {
     currentAngle = 360.0 * currentCount / ppr / gearRatio / 4;
+    motorData.data.byte0 = currentAngle;
+}
+
+void calculateVelocity()
+{
+
+}
+
+void calculateAcceleration()
+{
+
+}
+
+void calculateCurrent()
+{
+    float vSense = (analogRead(pinCurrent)*5.0)/1024;    // motor current sensor voltage
+    motorCurrent = vSense * 11370.0/1.5/2;                // motor current in mAmp, /2 comes from experiment
+    motorData.data.byte3 = int(motorCurrent/10.0);        // convert to int for serial transfer in (0~255) range
 }
 
 void calculatePWM()
@@ -328,4 +399,30 @@ void gainScheduling()
         }
     }
 
+}
+
+// function to send out data to master
+void requestEvent()
+{
+    Wire.write("hello   "); // respond with message of 8 bytes as master expects
+}
+
+// reset/initialize data in the i2c bus
+void resetData()
+{
+    motorData.data.byte0 = 0;
+    motorData.data.byte1 = 0;
+    motorData.data.byte2 = 0;
+    motorData.data.byte4 = 0;
+    motorData.data.byte3 = 0;
+    motorData.data.byte5 = 0;
+    motorData.data.bool0 = false;
+    motorData.data.bool1 = false;
+    motorData.data.bool2 = false;
+    motorData.data.bool3 = false;
+    motorData.data.bool4 = false;
+    motorData.data.bool5 = false;
+    motorData.data.bool6 = false;
+    motorData.data.bool7 = false;
+    motorData.data.byte7 = 0;
 }
