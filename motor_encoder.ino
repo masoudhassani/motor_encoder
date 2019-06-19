@@ -22,10 +22,18 @@ bool       reverseDir = false;
 volatile int32_t currentCount = 0;
 int32_t setpointCount = 0;
 
-// ----------------------- motor shaft angle ----------------------
+// -------------------- motor shaft angle, velocity, acceleration -----------
 float currentAngle = 0;
 float initialAngle = 0;
 float setpointAngle = 0;
+float prevAngle = 0;
+float currentVelocity = 0;
+float prevVelocity = 0;
+float currentAcceleration = 0;
+bool  isAccelerating = false;
+bool  rotatingCW = false;
+uint32_t t = 0;   // timer to calculate velocity and acceleration
+uint16_t dt = 0;
 
 // ----------------------- stuff for serial read ----------------------
 String inString = "";
@@ -160,6 +168,8 @@ void setup()
     Wire.begin(deviceAddress);
     Wire.onRequest(requestEvent);
     resetData();  // reset motor data
+
+    t = micros();  // start timer
 }
 
 void loop()
@@ -229,12 +239,30 @@ void calculateAngle()
 
 void calculateVelocity()
 {
-
+    dt = micros() - t;
+    currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;
+    motorData.data.byte1 = int(currentVelocity);
+    if (currentVelocity > 0){
+        rotatingCW = true;
+    }
+    else{
+        rotatingCW = false;
+    }
+    prevAngle = currentAngle;
 }
 
 void calculateAcceleration()
 {
-
+    currentAcceleration = (currentVelocity - prevVelocity) * 1000000 / dt;
+    motorData.data.byte2 = int(currentAcceleration);
+    if (currentAcceleration > 0){
+        isAccelerating = true;
+    }
+    else{
+        isAccelerating = false;
+    }
+    prevVelocity = currentVelocity;
+    t = micros();
 }
 
 void calculateCurrent()
@@ -404,7 +432,7 @@ void gainScheduling()
 // function to send out data to master
 void requestEvent()
 {
-    Wire.write("hello   "); // respond with message of 8 bytes as master expects
+    Wire.write(motorData.data,8); // respond with message of 8 bytes as master expects
 }
 
 // reset/initialize data in the i2c bus
