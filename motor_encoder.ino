@@ -432,7 +432,10 @@ void gainScheduling()
 // function to send out data to master
 void requestEvent()
 {
-    Wire.write(motorData.data,8); // respond with message of 8 bytes as master expects
+    //byte buffer[8];
+    //buffer[0] = ...
+    //Wire.write(motorData.data,8); // respond with message of 8 bytes as master expects
+    Wire.write((byte *)&motorData.data, sizeof motorData.data);
 }
 
 // reset/initialize data in the i2c bus
