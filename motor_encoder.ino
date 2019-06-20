@@ -10,7 +10,7 @@ const byte pinA = 2;   // this is the intrupt pin and the signal A of encoder
 const byte pinB = 3;   // this is the intrupt pin and the signal B of encoder
 const byte pinPWM = 10; // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
 const byte pinEnable = 4;  // motor enable pin
-const byte pinCurrent = 16; // analog pin to read motor current
+const byte pinCurrent = 14; // analog pin to read motor current
 const byte pinDir1 = 7;      // pin for direction of motor driver
 const byte pinDir2 = 8;      // pin for direction of motor driver
 uint16_t   gearRatio = 155.572916; //150; // this value was corrected based on 16 rotations
@@ -91,29 +91,32 @@ uint8_t byte6 boolean set 1
 uint8_t byte7 boolean set 2
 */
 // data structure setup
-union dataPackage
-    {
-        uint64_t value;
-        struct
-        {
-            uint8_t byte0;
-            uint8_t byte1;
-            uint8_t byte2;
-            uint8_t byte3;
-            uint8_t byte4;
-            uint8_t byte5;
-            uint8_t bool0 : 1;
-            uint8_t bool1 : 1;
-            uint8_t bool2 : 1;
-            uint8_t bool3 : 1;
-            uint8_t bool4 : 1;
-            uint8_t bool5 : 1;
-            uint8_t bool6 : 1;
-            uint8_t bool7 : 1;
-            uint8_t byte7;
-        } data;
-    };
-union dataPackage motorData;
+typedef struct motorData_t
+{
+    uint8_t byte0;
+    uint8_t byte1;
+    uint8_t byte2;
+    uint8_t byte3;
+    uint8_t byte4;
+    uint8_t byte5;
+    uint8_t bool0 : 1;
+    uint8_t bool1 : 1;
+    uint8_t bool2 : 1;
+    uint8_t bool3 : 1;
+    uint8_t bool4 : 1;
+    uint8_t bool5 : 1;
+    uint8_t bool6 : 1;
+    uint8_t bool7 : 1;
+    uint8_t byte7;
+};
+
+typedef union dataPackage_t
+{
+    motorData_t motor;
+    byte dataPackage[sizeof(motorData_t)];
+};
+
+dataPackage_t status;
 
 // -------------------------------------------------------------------------
 // -------------------------------------------------------------------------
@@ -137,6 +140,7 @@ void setup()
 
     // define pins
     pinMode(pinPWM, OUTPUT);
+    pinMode(pinCurrent, INPUT);
     pinMode(pinDir1, OUTPUT);
     pinMode(pinDir2, OUTPUT);
     pinMode(pinEnable, OUTPUT);
@@ -167,6 +171,7 @@ void setup()
     // setup i2c communication
     Wire.begin(deviceAddress);
     Wire.onRequest(requestEvent);
+    Wire.onReceive(receiveEvent);
     resetData();  // reset motor data
 
     t = micros();  // start timer
@@ -184,7 +189,8 @@ void loop()
     analogWrite(pinPWM, pwm);
     //Serial.println(pwm);
     //printValues();
-    Serial.print(currentAngle);Serial.print("\n");
+    //Serial.print(currentAngle);Serial.print("\n");
+    //Serial.print(status.motor.byte0);Serial.print(status.motor.byte1);Serial.print("\n");
 }
 
 void readSerial()
@@ -234,19 +240,21 @@ void calculateCount()
 void calculateAngle()
 {
     currentAngle = 360.0 * currentCount / ppr / gearRatio / 4;
-    motorData.data.byte0 = currentAngle;
+    status.motor.byte0 = int(currentAngle);
 }
 
 void calculateVelocity()
 {
     dt = micros() - t;
     currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;
-    motorData.data.byte1 = int(currentVelocity);
+    status.motor.byte1 = int(currentVelocity);
     if (currentVelocity > 0){
         rotatingCW = true;
+        status.motor.bool0 = true;
     }
     else{
         rotatingCW = false;
+        status.motor.bool0 = false;
     }
     prevAngle = currentAngle;
 }
@@ -254,12 +262,14 @@ void calculateVelocity()
 void calculateAcceleration()
 {
     currentAcceleration = (currentVelocity - prevVelocity) * 1000000 / dt;
-    motorData.data.byte2 = int(currentAcceleration);
+    status.motor.byte2 = int(currentAcceleration);
     if (currentAcceleration > 0){
         isAccelerating = true;
+        status.motor.bool1 = true;
     }
     else{
         isAccelerating = false;
+        status.motor.bool1 = false;
     }
     prevVelocity = currentVelocity;
     t = micros();
@@ -269,7 +279,7 @@ void calculateCurrent()
 {
     float vSense = (analogRead(pinCurrent)*5.0)/1024;    // motor current sensor voltage
     motorCurrent = vSense * 11370.0/1.5/2;                // motor current in mAmp, /2 comes from experiment
-    motorData.data.byte3 = int(motorCurrent/10.0);        // convert to int for serial transfer in (0~255) range
+    status.motor.byte3 = int(motorCurrent/10.0);        // convert to int for serial transfer in (0~255) range
 }
 
 void calculatePWM()
@@ -432,28 +442,42 @@ void gainScheduling()
 // function to send out data to master
 void requestEvent()
 {
-    //byte buffer[8];
-    //buffer[0] = ...
-    //Wire.write(motorData.data,8); // respond with message of 8 bytes as master expects
-    Wire.write((byte *)&motorData.data, sizeof motorData.data);
+    byte buffer[8];
+    buffer[0] = status.motor.byte0;
+    buffer[1] = status.motor.byte1;
+    buffer[2] = status.motor.byte2;
+    buffer[3] = status.motor.byte3;
+    buffer[4] = status.motor.byte4;
+    buffer[5] = status.motor.byte5;
+    buffer[6] = 0;
+    buffer[7] = 0;
+    Wire.write(buffer,8); // respond with message of 8 bytes as master expects
+    //Wire.write((byte *)&status.motor, sizeof status.motor);
+}
+
+// function to receive data to master
+void receiveEvent()
+{
+    int8_t c = Wire.read();
+    setpointAngle = c;
 }
 
 // reset/initialize data in the i2c bus
 void resetData()
 {
-    motorData.data.byte0 = 0;
-    motorData.data.byte1 = 0;
-    motorData.data.byte2 = 0;
-    motorData.data.byte4 = 0;
-    motorData.data.byte3 = 0;
-    motorData.data.byte5 = 0;
-    motorData.data.bool0 = false;
-    motorData.data.bool1 = false;
-    motorData.data.bool2 = false;
-    motorData.data.bool3 = false;
-    motorData.data.bool4 = false;
-    motorData.data.bool5 = false;
-    motorData.data.bool6 = false;
-    motorData.data.bool7 = false;
-    motorData.data.byte7 = 0;
+    status.motor.byte0 = 0;
+    status.motor.byte1 = 0;
+    status.motor.byte2 = 0;
+    status.motor.byte4 = 0;
+    status.motor.byte3 = 0;
+    status.motor.byte5 = 0;
+    status.motor.bool0 = false;
+    status.motor.bool1 = false;
+    status.motor.bool2 = false;
+    status.motor.bool3 = false;
+    status.motor.bool4 = false;
+    status.motor.bool5 = false;
+    status.motor.bool6 = false;
+    status.motor.bool7 = false;
+    status.motor.byte7 = 0;
 }
