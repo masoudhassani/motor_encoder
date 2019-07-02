@@ -2,8 +2,9 @@
 #include <PID.h>
 #include <Wire.h>
 
-// ----------------------- i2c address ---------------------------------
+// ----------------------- i2c stuff ---------------------------------
 const int deviceAddress = 0x01;
+String receivedCommand = "";
 
 // ----------------------- motor and driver setup ----------------------
 const byte pinA = 2;   // this is the intrupt pin and the signal A of encoder
@@ -93,12 +94,12 @@ uint8_t byte7 boolean set 2
 // data structure setup
 typedef struct motorData_t
 {
-    uint8_t byte0;
-    uint8_t byte1;
-    uint8_t byte2;
-    uint8_t byte3;
-    uint8_t byte4;
-    uint8_t byte5;
+    int8_t byte0;
+    int8_t byte1;
+    int8_t byte2;
+    int8_t byte3;
+    int8_t byte4;
+    int8_t byte5;
     uint8_t bool0 : 1;
     uint8_t bool1 : 1;
     uint8_t bool2 : 1;
@@ -189,8 +190,8 @@ void loop()
     analogWrite(pinPWM, pwm);
     //Serial.println(pwm);
     //printValues();
-    //Serial.print(currentAngle);Serial.print("\n");
-    //Serial.print(status.motor.byte0);Serial.print(status.motor.byte1);Serial.print("\n");
+    Serial.print(status.motor.byte0);Serial.print("\t");Serial.print(status.motor.byte1);Serial.print("\n");
+    delay(5);
 }
 
 void readSerial()
@@ -206,30 +207,6 @@ void readSerial()
             inString = "";
         }
     }
-    // if (Serial.available()){
-    //     byte inChar = Serial.read();
-    //     //String content;
-    //     if (inChar == 'p'){
-    //         while (inChar != '\n'){
-    //             byte inChar = Serial.read();
-    //             inString += (char)inChar;
-    //             Serial.println(inChar);
-    //         }
-    //         pGain = inString.toFloat();
-    //         inString = "";
-    //         Serial.print("P gain changed to ");Serial.println(pGain);
-    //     }
-    //     else if (inChar == 'a'){
-    //         while (inChar != '\n'){
-    //             byte inChar = Serial.read();
-    //             inString += (char)inChar;
-    //         }
-    //         setpointAngle = inString.toFloat();
-    //         inString = "";
-    //         Serial.print("Setpoint angle changed to ");Serial.println(setpointAngle);
-    //     }
-    // }
-
 }
 
 void calculateCount()
@@ -246,8 +223,9 @@ void calculateAngle()
 void calculateVelocity()
 {
     dt = micros() - t;
-    currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;
-    status.motor.byte1 = int(currentVelocity);
+    currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;    // deg/sec
+    status.motor.byte1 = int(currentVelocity*0.166666);  // rpm
+    //Serial.println(status.motor.byte1);
     if (currentVelocity > 0){
         rotatingCW = true;
         status.motor.bool0 = true;
@@ -261,7 +239,7 @@ void calculateVelocity()
 
 void calculateAcceleration()
 {
-    currentAcceleration = (currentVelocity - prevVelocity) * 1000000 / dt;
+    currentAcceleration = (currentVelocity - prevVelocity) * 1000000 / dt;   //deg/s^2
     status.motor.byte2 = int(currentAcceleration);
     if (currentAcceleration > 0){
         isAccelerating = true;
@@ -458,8 +436,13 @@ void requestEvent()
 // function to receive data to master
 void receiveEvent()
 {
-    int8_t c = Wire.read();
-    setpointAngle = c;
+    while (Wire.available() > 0){
+        char c = Wire.read();
+        receivedCommand += c;
+    }
+    Serial.println(receivedCommand);
+    setpointAngle = receivedCommand.toFloat();
+    receivedCommand = "";
 }
 
 // reset/initialize data in the i2c bus
