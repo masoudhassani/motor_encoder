@@ -1,3 +1,27 @@
+/*
+this code has been deleoped by masoud hassani (m.hasany@gmail.com)
+last revision: July 2019
+
+-> this is used to control a dc motor attached to a quadrature encoder
+and drived by a VNH2SP30 motor driver.
+-> the code reads the encoder signal and generates proper pwm signal
+to rotate the motor to the desired setpoint.
+-> the motor controller acts as slave and can receive commands and send
+motor data to the master using i2c. device address is changed in deviceAddress
+-> there are two settings for pwm:
+    high res, 10-bit, 15625 Hz
+    low res, 8-bit, 7812 Hz
+-> timer and pwm frequency manipulation has been tested on atmega 328p
+and atmega 2560.
+
+!!!note:
+-> pinPWM should not change unless configPWM function is modified
+-> this is a single motor version
+-> PID library used in this code is not the arduino PID library. Download
+the correct library from https://github.com/masoudhassani/PID
+*/
+
+
 #include <FastGPIO.h>
 #include <PID.h>
 #include <Wire.h>
@@ -7,16 +31,16 @@ const int deviceAddress = 0x01;
 String receivedCommand = "";
 
 // ----------------------- motor and driver setup ----------------------
-const byte pinA = 2;   // this is the intrupt pin and the signal A of encoder
-const byte pinB = 3;   // this is the intrupt pin and the signal B of encoder
-const byte pinPWM = 10; // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
-const byte pinEnable = 4;  // motor enable pin
-const byte pinCurrent = 14; // analog pin to read motor current
-const byte pinDir1 = 7;      // pin for direction of motor driver
-const byte pinDir2 = 8;      // pin for direction of motor driver
-uint16_t   gearRatio = 155.572916; //150; // this value was corrected based on 16 rotations
-uint8_t    ppr = 11;
-bool       pwmHighRes = true;  // if true, 10 bit pwm is used else 8 bit
+const byte pinA = 2;                // this is the intrupt pin and the signal A of encoder
+const byte pinB = 3;                // this is the intrupt pin and the signal B of encoder
+const byte pinPWM = 10;             // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
+const byte pinEnable = 4;           // motor enable pin
+const byte pinCurrent = 14;         // analog pin to read motor current
+const byte pinDir1 = 7;             // pin for direction of motor driver
+const byte pinDir2 = 8;             // pin for direction of motor driver
+uint16_t   gearRatio = 155.572916;  // this value was corrected based on 16 full rotations
+uint8_t    ppr = 11;                // pulse per rotation of encoder
+bool       pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
 bool       reverseDir = false;
 
 // ----------------------- counter variables ----------------------
@@ -56,7 +80,6 @@ float dGain = 0.0000000;
 */
 float pwm = 0.0;
 float pwmMax;
-// initialize a pid controller
 float minEffort = -1.0;
 float maxEffort = 1.0;
 float tol = 2.0;
@@ -69,12 +92,13 @@ float pGainLarge = 0.0008;
 float iGainLarge = 0.007;
 float dGainLarge = 0.0000000;
 //gain scheduling parameters.
-float threshSmall = 10.0;
-float threshVerySmall = 2.0;
-float verySmallMultiplier = 8.0;
-float threshLarge = 20.0;
+float threshSmall = 10.0;          // setpoint angle smaller than this is considered small and small angle diff gains are used
+float threshVerySmall = 2.0;       // setpoint angle smaller than this is considered very small
+float verySmallMultiplier = 8.0;   // gain multiplication factor for very small angles
+float threshLarge = 20.0;          // beyon this, angle is large and large angle diff gains are used
 
 bool  windupGuard = true;
+// initialize a pid controller
 PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
 
 // ----------------------- data structure for motor data ---------------------
@@ -188,9 +212,10 @@ void loop()
     calculateCurrent();
     calculatePWM();
     analogWrite(pinPWM, pwm);
-    //Serial.println(pwm);
+    Serial.println(pwm);
+    //Serial.println(reverseDir);
     //printValues();
-    Serial.print(status.motor.byte0);Serial.print("\t");Serial.print(status.motor.byte1);Serial.print("\n");
+    //Serial.print(status.motor.byte0);Serial.print("\t");Serial.print(status.motor.byte1);Serial.print("\n");
     delay(5);
 }
 
@@ -225,7 +250,6 @@ void calculateVelocity()
     dt = micros() - t;
     currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;    // deg/sec
     status.motor.byte1 = int(currentVelocity*0.166666);  // rpm
-    //Serial.println(status.motor.byte1);
     if (currentVelocity > 0){
         rotatingCW = true;
         status.motor.bool0 = true;
@@ -256,8 +280,8 @@ void calculateAcceleration()
 void calculateCurrent()
 {
     float vSense = (analogRead(pinCurrent)*5.0)/1024;    // motor current sensor voltage
-    motorCurrent = vSense * 11370.0/1.5/2;                // motor current in mAmp, /2 comes from experiment
-    status.motor.byte3 = int(motorCurrent/10.0);        // convert to int for serial transfer in (0~255) range
+    motorCurrent = vSense * 11370.0/1.5/2;               // motor current in mAmp, /2 comes from experiment
+    status.motor.byte3 = int(motorCurrent/10.0);         // convert to int for serial transfer in (0~255) range
 }
 
 void calculatePWM()
@@ -414,7 +438,6 @@ void gainScheduling()
             pid.setGain(pGainLarge, iGainLarge, dGainLarge);
         }
     }
-
 }
 
 // function to send out data to master
