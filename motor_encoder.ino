@@ -3,7 +3,7 @@ this code has been deleoped by masoud hassani (m.hasany@gmail.com)
 last revision: July 2019
 
 -> this is used to control a dc motor attached to a quadrature encoder
-and drived by a VNH2SP30 motor driver.
+and drived by a TB9051FTG motor driver.
 -> the code reads the encoder signal and generates proper pwm signal
 to rotate the motor to the desired setpoint.
 -> the motor controller acts as slave and can receive commands and send
@@ -12,7 +12,6 @@ motor data to the master using i2c. device address is changed in deviceAddress
     high res, 10-bit, 15625 Hz
     low res, 8-bit, 7812 Hz
 -> timer and pwm frequency manipulation has been tested on atmega 328p
-and atmega 2560.
 
 !!!note:
 -> pinPWM should not change unless configPWM function is modified
@@ -33,11 +32,12 @@ String receivedCommand = "";
 // ----------------------- motor and driver setup ----------------------
 const byte pinA = 2;                // this is the intrupt pin and the signal A of encoder
 const byte pinB = 3;                // this is the intrupt pin and the signal B of encoder
-const byte pinPWM = 10;             // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
-const byte pinEnable = 4;           // motor enable pin
-const byte pinCurrent = 14;         // analog pin to read motor current
-const byte pinDir1 = 7;             // pin for direction of motor driver
-const byte pinDir2 = 8;             // pin for direction of motor driver
+const byte pinPWM1 = 10;            // this motor driver needs two pwm pins
+const byte pinPWM2 = 9;             // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
+const byte pinOCC = 4;              // driver over-current reset
+const byte pinOCM = 14;             // analog pin to read motor current
+const byte pinEN = 7;               // motor driver EN pin
+const byte pinENB = 8;              // motor driver ENB pin
 uint16_t   gearRatio = 155.572916;  // this value was corrected based on 16 full rotations
 uint8_t    ppr = 11;                // pulse per rotation of encoder
 bool       pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
@@ -164,12 +164,15 @@ void setup()
     configPWM();
 
     // define pins
-    pinMode(pinPWM, OUTPUT);
-    pinMode(pinCurrent, INPUT);
-    pinMode(pinDir1, OUTPUT);
-    pinMode(pinDir2, OUTPUT);
-    pinMode(pinEnable, OUTPUT);
-    digitalWrite(pinEnable, HIGH);
+    pinMode(pinPWM1, OUTPUT);
+    pinMode(pinPWM2, OUTPUT);
+    pinMode(pinOCM, INPUT);
+    pinMode(pinEN, OUTPUT);
+    pinMode(pinENB, OUTPUT);
+    pinMode(pinOCC, OUTPUT);
+    digitalWrite(pinEN, HIGH);
+    digitalWrite(pinENB, LOW);
+    digitalWrite(pinOCC, LOW);
 
     // initialize encoder pins and find their initial state
     FastGPIO::Pin<pinA>::setInputPulledUp();
@@ -211,12 +214,15 @@ void loop()
     calculateAcceleration();
     calculateCurrent();
     calculatePWM();
-    analogWrite(pinPWM, pwm);
-    Serial.println(pwm);
+    //analogWrite(pinPWM, pwm);
+    //Serial.println(pwm);
     //Serial.println(reverseDir);
     //printValues();
-    //Serial.print(status.motor.byte0);Serial.print("\t");Serial.print(status.motor.byte1);Serial.print("\n");
-    delay(5);
+    //Serial.print(pwm);Serial.print("\t");
+    Serial.print(currentAngle);Serial.print("\t");Serial.print("\n");
+    //Serial.print(status.motor.byte1);Serial.print("\t");
+    //Serial.print(motorCurrent);Serial.print("\n");
+    delay(2);
 }
 
 void readSerial()
@@ -279,9 +285,9 @@ void calculateAcceleration()
 
 void calculateCurrent()
 {
-    float vSense = (analogRead(pinCurrent)*5.0)/1024;    // motor current sensor voltage
-    motorCurrent = vSense * 11370.0/1.5/2;               // motor current in mAmp, /2 comes from experiment
-    status.motor.byte3 = int(motorCurrent/10.0);         // convert to int for serial transfer in (0~255) range
+    float vSense = (analogRead(pinOCM)*5.0)/1024;        // motor current sensor voltage
+    motorCurrent = vSense * 2000;                        // motor current in mAmp, 500 mv per amp
+    status.motor.byte3 = int(motorCurrent);              // convert to int for serial transfer in (0~255) range
 }
 
 void calculatePWM()
@@ -296,13 +302,13 @@ void calculatePWM()
     if (pwm < 0.0){
         pwm *= -1;
         reverseDir = true;
-        digitalWrite(pinDir1, HIGH);
-        digitalWrite(pinDir2, LOW);
+        analogWrite(pinPWM1, 0);
+        analogWrite(pinPWM2, pwm);
     }
     else{
         reverseDir = false;
-        digitalWrite(pinDir1, LOW);
-        digitalWrite(pinDir2, HIGH);
+        analogWrite(pinPWM1, pwm);
+        analogWrite(pinPWM2, 0);
     }
 }
 
