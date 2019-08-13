@@ -32,12 +32,12 @@ String receivedCommand = "";
 // ----------------------- motor and driver setup ----------------------
 const byte pinA = 2;                // this is the intrupt pin and the signal A of encoder
 const byte pinB = 3;                // this is the intrupt pin and the signal B of encoder
-const byte pinPWM1 = 10;            // this motor driver needs two pwm pins
-const byte pinPWM2 = 9;             // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
-const byte pinOCC = 4;              // driver over-current reset
+const byte pinPWM1 = 9;            // this motor driver needs two pwm pins
+const byte pinPWM2 = 10;             // pin for pwm signal of motor driver, do not change it from 9 and 10 unless you modify pwm setup
+const byte pinOCC = 8;              // driver over-current reset
 const byte pinOCM = 14;             // analog pin to read motor current
 const byte pinEN = 7;               // motor driver EN pin
-const byte pinENB = 8;              // motor driver ENB pin
+const byte pinENB = 6;              // motor driver ENB pin
 uint16_t   gearRatio = 155.572916;  // this value was corrected based on 16 full rotations
 uint8_t    ppr = 11;                // pulse per rotation of encoder
 bool       pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
@@ -104,35 +104,24 @@ PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
 // ----------------------- data structure for motor data ---------------------
 /*
 define data structure for sending data
-it creates a structure of 64 bytes including 8 indivisual bytes
-and it sends the structure through i2c:
-uint8_t byte0 angle
-uint8_t byte1 velocity
-uint8_t byte2 acceleration
-uint8_t byte3 current
-uint8_t byte4 temp
-uint8_t byte5 empty integer
-uint8_t byte6 boolean set 1
-uint8_t byte7 boolean set 2
+it creates a structure of 80 bites including four 16bit integers,
+one 8bit integer and eight booleans. We sends the structure through i2c:
+uint8_t data0 angle
+uint8_t data1 velocity
+uint8_t data2 acceleration
+uint8_t data3 current
+uint8_t data4 temp
+uint8_t data5 boolean set 1
 */
 // data structure setup
 typedef struct motorData_t
 {
-    int8_t byte0;
-    int8_t byte1;
-    int8_t byte2;
-    int8_t byte3;
-    int8_t byte4;
-    int8_t byte5;
-    uint8_t bool0 : 1;
-    uint8_t bool1 : 1;
-    uint8_t bool2 : 1;
-    uint8_t bool3 : 1;
-    uint8_t bool4 : 1;
-    uint8_t bool5 : 1;
-    uint8_t bool6 : 1;
-    uint8_t bool7 : 1;
-    uint8_t byte7;
+    int16_t data0;
+    int16_t data1;
+    int16_t data2;
+    int16_t data3;
+    uint8_t data4;
+    uint8_t data5;
 };
 
 typedef union dataPackage_t
@@ -219,8 +208,9 @@ void loop()
     //Serial.println(reverseDir);
     //printValues();
     //Serial.print(pwm);Serial.print("\t");
-    Serial.print(currentAngle);Serial.print("\t");Serial.print("\n");
-    //Serial.print(status.motor.byte1);Serial.print("\t");
+    //Serial.print(currentAngle);Serial.print("\t");Serial.print("\n");
+    //Serial.print(status.motor.data5, BIN);Serial.print("\t");
+    //Serial.println(status.motor.data1);
     //Serial.print(motorCurrent);Serial.print("\n");
     delay(2);
 }
@@ -248,21 +238,21 @@ void calculateCount()
 void calculateAngle()
 {
     currentAngle = 360.0 * currentCount / ppr / gearRatio / 4;
-    status.motor.byte0 = int(currentAngle);
+    status.motor.data0 = int(currentAngle * 10);   //angle*10
 }
 
 void calculateVelocity()
 {
     dt = micros() - t;
     currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;    // deg/sec
-    status.motor.byte1 = int(currentVelocity*0.166666);  // rpm
+    status.motor.data1 = int(currentVelocity * 0.166666 * 100);  // rpm*100
     if (currentVelocity > 0){
         rotatingCW = true;
-        status.motor.bool0 = true;
+        status.motor.data5 |= 1u;   //sets the first bit to 1
     }
     else{
         rotatingCW = false;
-        status.motor.bool0 = false;
+        status.motor.data5 &= ~(1u);  //sets the first bit to 0
     }
     prevAngle = currentAngle;
 }
@@ -270,14 +260,14 @@ void calculateVelocity()
 void calculateAcceleration()
 {
     currentAcceleration = (currentVelocity - prevVelocity) * 1000000 / dt;   //deg/s^2
-    status.motor.byte2 = int(currentAcceleration);
+    status.motor.data2 = int(currentAcceleration * 100);   // accel*100
     if (currentAcceleration > 0){
         isAccelerating = true;
-        status.motor.bool1 = true;
+        status.motor.data5 |= (1u << 1);  //sets the second bit to 1
     }
     else{
         isAccelerating = false;
-        status.motor.bool1 = false;
+        status.motor.data5 &= ~(1u << 1);  //sets the second bit to 0
     }
     prevVelocity = currentVelocity;
     t = micros();
@@ -287,7 +277,7 @@ void calculateCurrent()
 {
     float vSense = (analogRead(pinOCM)*5.0)/1024;        // motor current sensor voltage
     motorCurrent = vSense * 2000;                        // motor current in mAmp, 500 mv per amp
-    status.motor.byte3 = int(motorCurrent);              // convert to int for serial transfer in (0~255) range
+    status.motor.data3 = int(motorCurrent);
 }
 
 void calculatePWM()
@@ -302,13 +292,13 @@ void calculatePWM()
     if (pwm < 0.0){
         pwm *= -1;
         reverseDir = true;
-        analogWrite(pinPWM1, 0);
-        analogWrite(pinPWM2, pwm);
+        analogWrite(pinPWM1, pwm);
+        analogWrite(pinPWM2, 0);
     }
     else{
         reverseDir = false;
-        analogWrite(pinPWM1, pwm);
-        analogWrite(pinPWM2, 0);
+        analogWrite(pinPWM1, 0);
+        analogWrite(pinPWM2, pwm);
     }
 }
 
@@ -449,16 +439,18 @@ void gainScheduling()
 // function to send out data to master
 void requestEvent()
 {
-    byte buffer[8];
-    buffer[0] = status.motor.byte0;
-    buffer[1] = status.motor.byte1;
-    buffer[2] = status.motor.byte2;
-    buffer[3] = status.motor.byte3;
-    buffer[4] = status.motor.byte4;
-    buffer[5] = status.motor.byte5;
-    buffer[6] = 0;
-    buffer[7] = 0;
-    Wire.write(buffer,8); // respond with message of 8 bytes as master expects
+    byte buffer[10];
+    buffer[0] = (status.motor.data0 >> 8) & 0xFF;
+    buffer[1] = status.motor.data0  & 0xFF;
+    buffer[2] = (status.motor.data1 >> 8) & 0xFF;
+    buffer[3] = status.motor.data1  & 0xFF;
+    buffer[4] = (status.motor.data2 >> 8) & 0xFF;
+    buffer[5] = status.motor.data2  & 0xFF;
+    buffer[6] = (status.motor.data3 >> 8) & 0xFF;
+    buffer[7] = status.motor.data3  & 0xFF;
+    buffer[8] = status.motor.data4;
+    buffer[9] = status.motor.data5;
+    Wire.write(buffer,10); // respond with message of 10 bytes as master expects
     //Wire.write((byte *)&status.motor, sizeof status.motor);
 }
 
@@ -477,19 +469,10 @@ void receiveEvent()
 // reset/initialize data in the i2c bus
 void resetData()
 {
-    status.motor.byte0 = 0;
-    status.motor.byte1 = 0;
-    status.motor.byte2 = 0;
-    status.motor.byte4 = 0;
-    status.motor.byte3 = 0;
-    status.motor.byte5 = 0;
-    status.motor.bool0 = false;
-    status.motor.bool1 = false;
-    status.motor.bool2 = false;
-    status.motor.bool3 = false;
-    status.motor.bool4 = false;
-    status.motor.bool5 = false;
-    status.motor.bool6 = false;
-    status.motor.bool7 = false;
-    status.motor.byte7 = 0;
+    status.motor.data0 = 0;
+    status.motor.data1 = 0;
+    status.motor.data2 = 0;
+    status.motor.data4 = 0;
+    status.motor.data3 = 0;
+    status.motor.data5 = 0;
 }
