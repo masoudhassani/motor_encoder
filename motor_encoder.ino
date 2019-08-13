@@ -32,12 +32,12 @@ String receivedCommand = "";
 // ----------------------- motor and driver setup ----------------------
 const byte pinA = 2;                // this is the intrupt pin and the signal A of encoder
 const byte pinB = 3;                // this is the intrupt pin and the signal B of encoder
-const byte pinPWM1 = 10;            // this motor driver needs two pwm pins
-const byte pinPWM2 = 9;             // pin for pwm signal of motor driver, do not change it from 10 unless you modify pwm setup
-const byte pinOCC = 4;              // driver over-current reset
+const byte pinPWM1 = 9;            // this motor driver needs two pwm pins
+const byte pinPWM2 = 10;             // pin for pwm signal of motor driver, do not change it from 9 and 10 unless you modify pwm setup
+const byte pinOCC = 8;              // driver over-current reset
 const byte pinOCM = 14;             // analog pin to read motor current
 const byte pinEN = 7;               // motor driver EN pin
-const byte pinENB = 8;              // motor driver ENB pin
+const byte pinENB = 6;              // motor driver ENB pin
 uint16_t   gearRatio = 155.572916;  // this value was corrected based on 16 full rotations
 uint8_t    ppr = 11;                // pulse per rotation of encoder
 bool       pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
@@ -292,13 +292,13 @@ void calculatePWM()
     if (pwm < 0.0){
         pwm *= -1;
         reverseDir = true;
-        analogWrite(pinPWM1, 0);
-        analogWrite(pinPWM2, pwm);
+        analogWrite(pinPWM1, pwm);
+        analogWrite(pinPWM2, 0);
     }
     else{
         reverseDir = false;
-        analogWrite(pinPWM1, pwm);
-        analogWrite(pinPWM2, 0);
+        analogWrite(pinPWM1, 0);
+        analogWrite(pinPWM2, pwm);
     }
 }
 
