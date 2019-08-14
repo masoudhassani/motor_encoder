@@ -461,10 +461,10 @@ void receiveEvent()
         char c = Wire.read();
         receivedCommand += c;
     }
-    Serial.println(receivedCommand);
+    //Serial.println(receivedCommand);
     commandInterpreter(receivedCommand);
     //setpointAngle = receivedCommand.toFloat();
-    // clear the buffer 
+    // clear the buffer
     receivedCommand = "";
 }
 
