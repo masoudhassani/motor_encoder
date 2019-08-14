@@ -60,11 +60,25 @@ void commandInterpreter(String strCommand)
                 }
                 break;
 
+            // stuff about the encoder
             case 4:
-                setpointAngle = -90;
+                sub2 =  strCommand.substring(3,cmdLength);
+                ind = sub2.length();
+                // set gear ratio
+                if (sub2.charAt(0)=='M' || sub2.charAt(0)=='N'){
+                    gearRatio = sub2.substring(1,ind).toFloat();
+                }
+                // set ppr
+                else if (sub2.charAt(0)=='N' || sub2.charAt(0)=='n'){
+                    ppr = sub2.substring(1,ind).toFloat();
+                }
                 break;
 
             case 5:
+                setpointAngle = -90;
+                break;
+
+            case 6:
                 setpointAngle = 90;
                 break;
         }
