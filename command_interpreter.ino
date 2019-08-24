@@ -3,11 +3,12 @@ void commandInterpreter(String strCommand)
     uint8_t cmdLength = strCommand.length();
     String sub2;
     int8_t ind;
+    uint8_t intLength = 1;
     // interpret commands starting with 'g' or 'G'
     if(strCommand.charAt(0)=='G' || strCommand.charAt(0)=='g'){
 
-        // read the integer after the command definition. two digit int is expected
-        uint8_t sub1 = strCommand.substring(1,3).toInt();
+        // read the integer after the command definition. intLength digit(s) int is expected
+        uint8_t sub1 = strCommand.substring(1,intLength+1).toInt();
 
         switch(sub1)
         {
@@ -24,7 +25,7 @@ void commandInterpreter(String strCommand)
 
             // stuff about position, speed and acceleration
             case 2:
-                sub2 =  strCommand.substring(3,cmdLength);
+                sub2 =  strCommand.substring(intLength+1,cmdLength);
                 ind = sub2.length();
                 // set setpoint angle
                 if (sub2.charAt(0)=='A' || sub2.charAt(0)=='a'){
@@ -44,7 +45,7 @@ void commandInterpreter(String strCommand)
 
             // stuff about pid controller
             case 3:
-                sub2 =  strCommand.substring(3,cmdLength);
+                sub2 =  strCommand.substring(intLength+1,cmdLength);
                 ind = sub2.length();
                 // set p gain
                 if (sub2.charAt(0)=='P' || sub2.charAt(0)=='p'){
@@ -62,7 +63,7 @@ void commandInterpreter(String strCommand)
 
             // stuff about the encoder
             case 4:
-                sub2 =  strCommand.substring(3,cmdLength);
+                sub2 =  strCommand.substring(intLength+1,cmdLength);
                 ind = sub2.length();
                 // set gear ratio
                 if (sub2.charAt(0)=='M' || sub2.charAt(0)=='N'){
