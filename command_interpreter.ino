@@ -31,16 +31,6 @@ void commandInterpreter(String strCommand)
                 if (sub2.charAt(0)=='A' || sub2.charAt(0)=='a'){
                     setpointAngle = sub2.substring(1,ind).toFloat();
                 }
-                // limit forward speed, 1 is max
-                else if (sub2.charAt(0)=='F' || sub2.charAt(0)=='f'){
-                    maxEffort = sub2.substring(1,ind).toFloat();
-                    // need a setter function in the pid library
-                }
-                // limit forward speed, -1 is min
-                else if (sub2.charAt(0)=='R' || sub2.charAt(0)=='r'){
-                    minEffort = sub2.substring(1,ind).toFloat();
-                    // need a setter function in the pid library
-                }
                 break;
 
             // stuff about pid controller
@@ -59,6 +49,22 @@ void commandInterpreter(String strCommand)
                 else if (sub2.charAt(0)=='D' || sub2.charAt(0)=='d'){
                     dGain = sub2.substring(1,ind).toFloat();
                 }
+                // limit forward speed, 1 is max
+                else if (sub2.charAt(0)=='F' || sub2.charAt(0)=='f'){
+                    maxEffort = sub2.substring(1,ind).toFloat();
+                    // need a setter function in the pid library
+                }
+                // limit forward speed, -1 is min
+                else if (sub2.charAt(0)=='R' || sub2.charAt(0)=='r'){
+                    minEffort = sub2.substring(1,ind).toFloat();
+                    // need a setter function in the pid library
+                }
+                // limit speed of both direction
+                else if (sub2.charAt(0)=='B' || sub2.charAt(0)=='b'){
+                    maxEffort = sub2.substring(1,ind).toFloat();
+                    minEffort = -1.0 * maxEffort;
+                    // need a setter function in the pid library
+                }                
                 break;
 
             // stuff about the encoder

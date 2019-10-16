@@ -40,10 +40,10 @@ const byte pinOCC = 8;              // driver over-current reset
 const byte pinOCM = 14;             // analog pin to read motor current
 const byte pinEN = 7;               // motor driver EN pin
 const byte pinENB = 6;              // motor driver ENB pin
-float gearRatio = 155.575078891;  // this value was corrected based on 16 full rotations
-float    ppr = 11;                // pulse per rotation of encoder
-bool       pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
-bool       reverseDir = false;
+float gearRatio = 155.563269888;  // this value was corrected based on 16 full rotations
+float ppr = 11;                // pulse per rotation of encoder
+bool  pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
+bool  reverseDir = false;
 
 // ----------------------- counter variables ----------------------
 volatile int32_t currentCount = 0;
@@ -280,6 +280,9 @@ void calculateCurrent()
 
 void calculatePWM()
 {
+    // update pid effort min/max
+    pid.setEffort(maxEffort, minEffort);
+
     // update gains based on predefined schedule
     gainScheduling();
 
@@ -438,7 +441,7 @@ void dataPacking()
     // break motor angle to two bytes
     buffer[0] = (status.motor.data0 >> 8) & 0xFF;
     buffer[1] = status.motor.data0  & 0xFF;
-    // the rest of the data are one byte each 
+    // the rest of the data are one byte each
     buffer[2] = status.motor.data3;
     buffer[3] = status.motor.data4;
 }
