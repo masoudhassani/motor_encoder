@@ -28,6 +28,8 @@ the correct library from https://github.com/masoudhassani/PID
 // ----------------------- i2c stuff ---------------------------------
 const int deviceAddress = 0x01;
 String receivedCommand = "";
+const uint8_t sizeOfData = 4;   // motor status data size sent to master
+byte buffer[sizeOfData];
 
 // ----------------------- motor and driver setup ----------------------
 const byte pinA = 2;                // this is the intrupt pin and the signal A of encoder
@@ -38,14 +40,15 @@ const byte pinOCC = 8;              // driver over-current reset
 const byte pinOCM = 14;             // analog pin to read motor current
 const byte pinEN = 7;               // motor driver EN pin
 const byte pinENB = 6;              // motor driver ENB pin
-uint16_t   gearRatio = 155.572916;  // this value was corrected based on 16 full rotations
-uint8_t    ppr = 11;                // pulse per rotation of encoder
-bool       pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
-bool       reverseDir = false;
+float gearRatio = 155.563269888;  // this value was corrected based on 16 full rotations
+float ppr = 11;                // pulse per rotation of encoder
+bool  pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
+bool  reverseDir = false;
 
 // ----------------------- counter variables ----------------------
 volatile int32_t currentCount = 0;
 int32_t setpointCount = 0;
+volatile bool state;
 
 // -------------------- motor shaft angle, velocity, acceleration -----------
 float currentAngle = 0;
@@ -107,21 +110,21 @@ define data structure for sending data
 it creates a structure of 80 bites including four 16bit integers,
 one 8bit integer and eight booleans. We sends the structure through i2c:
 uint8_t data0 angle
-uint8_t data1 velocity
-uint8_t data2 acceleration
+uint8_t data1 velocity  (not used)
+uint8_t data2 acceleration  (not used)
 uint8_t data3 current
 uint8_t data4 temp
-uint8_t data5 boolean set 1
+uint8_t data5 boolean set 1   (not used)
 */
-// data structure setup
+// data structure setup (some of data were eliminated bycommenting to decrease i2c transfer time)
 typedef struct motorData_t
 {
     int16_t data0;
-    int16_t data1;
-    int16_t data2;
-    int16_t data3;
+    // int16_t data1;
+    // int16_t data2;
+    uint8_t data3;
     uint8_t data4;
-    uint8_t data5;
+    // uint8_t data5;
 };
 
 typedef union dataPackage_t
@@ -199,20 +202,12 @@ void loop()
     readSerial();
     calculateCount();
     calculateAngle();
-    calculateVelocity();
-    calculateAcceleration();
+    //calculateVelocity();   // will be calculated in master
+    //calculateAcceleration();    // will be calculated in master
     calculateCurrent();
     calculatePWM();
-    //analogWrite(pinPWM, pwm);
-    //Serial.println(pwm);
-    //Serial.println(reverseDir);
-    //printValues();
-    //Serial.print(pwm);Serial.print("\t");
-    //Serial.print(currentAngle);Serial.print("\t");Serial.print("\n");
-    //Serial.print(status.motor.data5, BIN);Serial.print("\t");
-    //Serial.println(status.motor.data1);
-    //Serial.print(motorCurrent);Serial.print("\n");
-    delay(2);
+    dataPacking();
+    commandInterpreter(receivedCommand);
 }
 
 void readSerial()
@@ -224,6 +219,7 @@ void readSerial()
         }
         else{
             setpointAngle = inString.toFloat();
+
             // clear the string for new input:
             inString = "";
         }
@@ -232,7 +228,7 @@ void readSerial()
 
 void calculateCount()
 {
-    setpointCount = ((setpointAngle - initialAngle) * ppr * gearRatio * 4 / 360.0);
+    setpointCount = ((setpointAngle - initialAngle) * ppr * gearRatio * 4.0 / 360.0);
 }
 
 void calculateAngle()
@@ -241,47 +237,52 @@ void calculateAngle()
     status.motor.data0 = int(currentAngle * 10);   //angle*10
 }
 
-void calculateVelocity()
-{
-    dt = micros() - t;
-    currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;    // deg/sec
-    status.motor.data1 = int(currentVelocity * 0.166666 * 100);  // rpm*100
-    if (currentVelocity > 0){
-        rotatingCW = true;
-        status.motor.data5 |= 1u;   //sets the first bit to 1
-    }
-    else{
-        rotatingCW = false;
-        status.motor.data5 &= ~(1u);  //sets the first bit to 0
-    }
-    prevAngle = currentAngle;
-}
+// the following functions were commented for i2c transfer performance
+// these will be calculated in master
+// void calculateVelocity()
+// {
+//     dt = micros() - t;
+//     currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;    // deg/sec
+//     status.motor.data1 = int(currentVelocity * 0.166666 * 100);  // rpm*100
+//     if (currentVelocity > 0){
+//         rotatingCW = true;
+//         status.motor.data5 |= 1u;   //sets the first bit to 1
+//     }
+//     else{
+//         rotatingCW = false;
+//         status.motor.data5 &= ~(1u);  //sets the first bit to 0
+//     }
+//     prevAngle = currentAngle;
+// }
 
-void calculateAcceleration()
-{
-    currentAcceleration = (currentVelocity - prevVelocity) * 1000000 / dt;   //deg/s^2
-    status.motor.data2 = int(currentAcceleration * 100);   // accel*100
-    if (currentAcceleration > 0){
-        isAccelerating = true;
-        status.motor.data5 |= (1u << 1);  //sets the second bit to 1
-    }
-    else{
-        isAccelerating = false;
-        status.motor.data5 &= ~(1u << 1);  //sets the second bit to 0
-    }
-    prevVelocity = currentVelocity;
-    t = micros();
-}
+// void calculateAcceleration()
+// {
+//     currentAcceleration = (currentVelocity - prevVelocity) * 1000000 / dt;   //deg/s^2
+//     status.motor.data2 = int(currentAcceleration * 100);   // accel*100
+//     if (currentAcceleration > 0){
+//         isAccelerating = true;
+//         status.motor.data5 |= (1u << 1);  //sets the second bit to 1
+//     }
+//     else{
+//         isAccelerating = false;
+//         status.motor.data5 &= ~(1u << 1);  //sets the second bit to 0
+//     }
+//     prevVelocity = currentVelocity;
+//     t = micros();
+// }
 
 void calculateCurrent()
 {
     float vSense = (analogRead(pinOCM)*5.0)/1024;        // motor current sensor voltage
     motorCurrent = vSense * 2000;                        // motor current in mAmp, 500 mv per amp
-    status.motor.data3 = int(motorCurrent);
+    status.motor.data3 = int(motorCurrent/10);
 }
 
 void calculatePWM()
 {
+    // update pid effort min/max
+    pid.setEffort(maxEffort, minEffort);
+
     // update gains based on predefined schedule
     gainScheduling();
 
@@ -313,8 +314,6 @@ void printValues()
         Serial.print(setpointAngle);
         Serial.print("  Current Angle: ");
         Serial.print(currentAngle);
-        Serial.print("  Dir Reverse: ");
-        Serial.print(reverseDir);
         Serial.print("  PWM: ");
         Serial.println(pwm);
     }
@@ -323,7 +322,7 @@ void printValues()
 // if a falling edge in signal A is detected
 void fallingEdgeA()
 {
-    bool state = FastGPIO::Pin<pinB>::isInputHigh();
+    state = FastGPIO::Pin<pinB>::isInputHigh();
     if (state){
         currentCount ++;
     }
@@ -336,7 +335,7 @@ void fallingEdgeA()
 // if a rising edge in signal A is detected
 void risingEdgeA()
 {
-    bool state = FastGPIO::Pin<pinB>::isInputHigh();
+    state = FastGPIO::Pin<pinB>::isInputHigh();
     if (state){
         currentCount --;
     }
@@ -349,7 +348,7 @@ void risingEdgeA()
 // if a falling edge in signal B is detected
 void fallingEdgeB()
 {
-    bool state = FastGPIO::Pin<pinA>::isInputHigh();
+    state = FastGPIO::Pin<pinA>::isInputHigh();
     if (state){
         currentCount --;
     }
@@ -362,7 +361,7 @@ void fallingEdgeB()
 // if a rising edge in signal Bis detected
 void risingEdgeB()
 {
-    bool state = FastGPIO::Pin<pinA>::isInputHigh();
+    state = FastGPIO::Pin<pinA>::isInputHigh();
     if (state){
         currentCount ++;
     }
@@ -436,43 +435,55 @@ void gainScheduling()
     }
 }
 
+// function to prepare aa data pack for i2c
+void dataPacking()
+{
+    // break motor angle to two bytes
+    buffer[0] = (status.motor.data0 >> 8) & 0xFF;
+    buffer[1] = status.motor.data0  & 0xFF;
+    // the rest of the data are one byte each
+    buffer[2] = status.motor.data3;
+    buffer[3] = status.motor.data4;
+}
+
 // function to send out data to master
 void requestEvent()
 {
-    byte buffer[10];
-    buffer[0] = (status.motor.data0 >> 8) & 0xFF;
-    buffer[1] = status.motor.data0  & 0xFF;
-    buffer[2] = (status.motor.data1 >> 8) & 0xFF;
-    buffer[3] = status.motor.data1  & 0xFF;
-    buffer[4] = (status.motor.data2 >> 8) & 0xFF;
-    buffer[5] = status.motor.data2  & 0xFF;
-    buffer[6] = (status.motor.data3 >> 8) & 0xFF;
-    buffer[7] = status.motor.data3  & 0xFF;
-    buffer[8] = status.motor.data4;
-    buffer[9] = status.motor.data5;
-    Wire.write(buffer,10); // respond with message of 10 bytes as master expects
-    //Wire.write((byte *)&status.motor, sizeof status.motor);
+    // the following data packing is not used for now to decrease i2c transfer time
+    // byte buffer[sizeOfData];
+    // buffer[0] = (status.motor.data0 >> 8) & 0xFF;
+    // buffer[1] = status.motor.data0  & 0xFF;
+    // buffer[2] = status.motor.data3;
+    // buffer[3] = status.motor.data4;
+    // buffer[2] = (status.motor.data1 >> 8) & 0xFF;
+    // buffer[3] = status.motor.data1  & 0xFF;
+    // buffer[4] = (status.motor.data2 >> 8) & 0xFF;
+    // buffer[5] = status.motor.data2  & 0xFF;
+    // buffer[6] = (status.motor.data3 >> 8) & 0xFF;
+    // buffer[7] = status.motor.data3  & 0xFF;
+    // buffer[8] = status.motor.data4;
+    // buffer[9] = status.motor.data5;
+    Wire.write(buffer,sizeOfData); // respond with message of sizeOfData bytes as master expects
 }
 
 // function to receive data to master
 void receiveEvent()
 {
+    // clear the buffer
+    receivedCommand = "";
     while (Wire.available() > 0){
         char c = Wire.read();
         receivedCommand += c;
     }
-    Serial.println(receivedCommand);
-    setpointAngle = receivedCommand.toFloat();
-    receivedCommand = "";
 }
 
 // reset/initialize data in the i2c bus
 void resetData()
 {
     status.motor.data0 = 0;
-    status.motor.data1 = 0;
-    status.motor.data2 = 0;
+    // status.motor.data1 = 0;
+    // status.motor.data2 = 0;
     status.motor.data4 = 0;
     status.motor.data3 = 0;
-    status.motor.data5 = 0;
+    // status.motor.data5 = 0;
 }
