@@ -81,11 +81,21 @@ void commandInterpreter(String strCommand)
                 }
                 break;
 
+            // stuff about position, speed and acceleration
             case 5:
-                setpointAngle = -90;
+                sub2 =  strCommand.substring(intLength+1,cmdLength);
+                ind = sub2.length();
+                // set setpoint angle
+                if (sub2.charAt(0)=='C' || sub2.charAt(0)=='c'){
+                    motorCurrentSetpoint = sub2.substring(1,ind).toFloat();
+                }
                 break;
 
             case 6:
+                setpointAngle = -90;
+                break;
+
+            case 7:
                 setpointAngle = 90;
                 break;
         }

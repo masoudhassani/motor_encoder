@@ -26,9 +26,9 @@ the correct library from https://github.com/masoudhassani/PID
 #include <Wire.h>
 
 // ----------------------- i2c stuff ---------------------------------
-const int deviceAddress = 0x01;
+const int deviceAddress = 0x02;
 String receivedCommand = "";
-const uint8_t sizeOfData = 4;   // motor status data size sent to master
+const uint8_t sizeOfData = 2;   // motor status data size sent to master
 byte buffer[sizeOfData];
 
 // ----------------------- motor and driver setup ----------------------
@@ -62,69 +62,50 @@ bool  isAccelerating = false;
 bool  rotatingCW = false;
 uint32_t t = 0;   // timer to calculate velocity and acceleration
 uint16_t dt = 0;
+uint32_t counter = 0;
 
 // ----------------------- stuff for serial read ----------------------
 String inString = "";
 
 // ----------------------- motor current calculated from driver sensor ---------
 float motorCurrent = 0;
+float motorCurrentFiltered = 0;
+float filterConstant = 10000;  //microseconds, 0 means no low pass filter
+uint16_t motorCurrentSetpoint = 300;    // milli amps
+uint16_t motorCurrentMax = 2000;       // milli amps
 
 // ----------------------- pwm stuff ----------------------
-/*
-large angle diff pid gains (for 8 volts):
-float pGain = 0.0008;
-float iGain = 0.007;
-float dGain = 0.0000000;
-
-small angle diff pid gains (for 8 volts):
-float pGain = 0.005;
-float iGain = 0.005;
-float dGain = 0.0000000;
-*/
-float pwm = 0.0;
+float contEff = 0.0;     // control effort between minEffort and maxEffort
+int8_t dutyCycle = 0;    // this ranges from -100 to 100 where - sign means reverse direction. 100 is full speed and 0 is stop
 float pwmMax;
-float minEffort = -1.0;
-float maxEffort = 1.0;
-float tol = 2.0;
-// small angle diff gains
-float pGain = 0.005;
-float iGain = 0.005;
-float dGain = 0.0000000;
-// large angle diff gains
-float pGainLarge = 0.0008;
-float iGainLarge = 0.007;
-float dGainLarge = 0.0000000;
-//gain scheduling parameters.
-float threshSmall = 10.0;          // setpoint angle smaller than this is considered small and small angle diff gains are used
-float threshVerySmall = 2.0;       // setpoint angle smaller than this is considered very small
-float verySmallMultiplier = 8.0;   // gain multiplication factor for very small angles
-float threshLarge = 20.0;          // beyon this, angle is large and large angle diff gains are used
-
+float minEffort = -0.6;
+float maxEffort = 0.6;
+float pwm = pwmMax * maxEffort;
+float maxIntegral = 1.0*maxEffort;
+float tol = 0.0;
 bool  windupGuard = true;
+
+//gains
+float pGain = 0.00001;
+float iGain = 0.5;
+float dGain = 0.0000000;
+
 // initialize a pid controller
 PID pid(pGain, iGain, dGain, windupGuard, minEffort, maxEffort, tol);
 
 // ----------------------- data structure for motor data ---------------------
 /*
 define data structure for sending data
-it creates a structure of 80 bites including four 16bit integers,
-one 8bit integer and eight booleans. We sends the structure through i2c:
-uint8_t data0 angle
-uint8_t data1 velocity  (not used)
-uint8_t data2 acceleration  (not used)
-uint8_t data3 current
-uint8_t data4 temp
-uint8_t data5 boolean set 1   (not used)
+it creates a structure of 24 bites including one 16bit integers and
+one 8bit integer We sends the structure through i2c:
+uint16_t data0 current
+uint8_t  data1 temp
 */
 // data structure setup (some of data were eliminated bycommenting to decrease i2c transfer time)
 typedef struct motorData_t
 {
-    int16_t data0;
-    // int16_t data1;
-    // int16_t data2;
-    uint8_t data3;
-    uint8_t data4;
-    // uint8_t data5;
+    uint16_t data0;   // current
+    //uint8_t  data1;   // temp
 };
 
 typedef union dataPackage_t
@@ -140,6 +121,8 @@ dataPackage_t status;
 // set up function of arduino, this runs once
 void setup()
 {
+    //pinMode(LED_BUILTIN, OUTPUT);
+
     // initialize serial connection
     Serial.begin (9600);
     Serial.println("Configure PWM ...");
@@ -166,28 +149,6 @@ void setup()
     digitalWrite(pinENB, LOW);
     digitalWrite(pinOCC, LOW);
 
-    // initialize encoder pins and find their initial state
-    FastGPIO::Pin<pinA>::setInputPulledUp();
-    FastGPIO::Pin<pinB>::setInputPulledUp();
-    bool stateA = FastGPIO::Pin<pinA>::isInputHigh();
-    bool stateB = FastGPIO::Pin<pinB>::isInputHigh();
-
-    if (stateA){
-        attachInterrupt(digitalPinToInterrupt(pinA), fallingEdgeA, FALLING);
-    }
-    else
-    {
-        attachInterrupt(digitalPinToInterrupt(pinA), risingEdgeA, RISING);
-    }
-
-    if (stateB){
-        attachInterrupt(digitalPinToInterrupt(pinB), fallingEdgeB, FALLING);
-    }
-    else
-    {
-        attachInterrupt(digitalPinToInterrupt(pinB), risingEdgeB, RISING);
-    }
-
     // setup i2c communication
     Wire.begin(deviceAddress);
     Wire.onRequest(requestEvent);
@@ -195,19 +156,32 @@ void setup()
     resetData();  // reset motor data
 
     t = micros();  // start timer
+
+    pid.constraintIntegral(maxIntegral);
 }
 
 void loop()
 {
+    timer();
     readSerial();
-    calculateCount();
-    calculateAngle();
-    //calculateVelocity();   // will be calculated in master
-    //calculateAcceleration();    // will be calculated in master
     calculateCurrent();
     calculatePWM();
     dataPacking();
     commandInterpreter(receivedCommand);
+
+    // if (counter % 500 == 0)
+    // {
+    //     //Serial.print(motorCurrent);Serial.print('\t'); 
+    //     //float* ce;
+    //     //ce = pid.returnControlEfforts();     
+    //     //Serial.print(ce[1]*pwmMax);Serial.print('\t');
+    //     //Serial.print(ce[0]*pwmMax);Serial.print('\t'); 
+    //     Serial.println(motorCurrent); 
+    //     //Serial.println(dt); 
+    //     //Serial.print(motorCurrentFiltered);Serial.print('\t');          
+    //     //Serial.println(pwm);
+    // }  
+    // counter += 1;    
 }
 
 void readSerial()
@@ -218,76 +192,44 @@ void readSerial()
             inString += (char)inChar;
         }
         else{
-            setpointAngle = inString.toFloat();
-
+            motorCurrentSetpoint = inString.toInt();
+            motorCurrentSetpoint = min(max(motorCurrentSetpoint, 0), motorCurrentMax);
+            Serial.print("current setpoint: "); Serial.println(motorCurrentSetpoint);
+            
             // clear the string for new input:
             inString = "";
         }
     }
 }
 
-void calculateCount()
-{
-    setpointCount = ((setpointAngle - initialAngle) * ppr * gearRatio * 4.0 / 360.0);
-}
-
-void calculateAngle()
-{
-    currentAngle = 360.0 * currentCount / ppr / gearRatio / 4;
-    status.motor.data0 = int(currentAngle * 10);   //angle*10
-}
-
-// the following functions were commented for i2c transfer performance
-// these will be calculated in master
-// void calculateVelocity()
-// {
-//     dt = micros() - t;
-//     currentVelocity = (currentAngle - prevAngle) * 1000000 / dt;    // deg/sec
-//     status.motor.data1 = int(currentVelocity * 0.166666 * 100);  // rpm*100
-//     if (currentVelocity > 0){
-//         rotatingCW = true;
-//         status.motor.data5 |= 1u;   //sets the first bit to 1
-//     }
-//     else{
-//         rotatingCW = false;
-//         status.motor.data5 &= ~(1u);  //sets the first bit to 0
-//     }
-//     prevAngle = currentAngle;
-// }
-
-// void calculateAcceleration()
-// {
-//     currentAcceleration = (currentVelocity - prevVelocity) * 1000000 / dt;   //deg/s^2
-//     status.motor.data2 = int(currentAcceleration * 100);   // accel*100
-//     if (currentAcceleration > 0){
-//         isAccelerating = true;
-//         status.motor.data5 |= (1u << 1);  //sets the second bit to 1
-//     }
-//     else{
-//         isAccelerating = false;
-//         status.motor.data5 &= ~(1u << 1);  //sets the second bit to 0
-//     }
-//     prevVelocity = currentVelocity;
-//     t = micros();
-// }
-
 void calculateCurrent()
 {
     float vSense = (analogRead(pinOCM)*5.0)/1024;        // motor current sensor voltage
     motorCurrent = vSense * 2000;                        // motor current in mAmp, 500 mv per amp
-    status.motor.data3 = int(motorCurrent/10);
+    //motorCurrentFiltered = lowPassFilter(motorCurrent, motorCurrentFiltered, dt, filterConstant);
+    status.motor.data0 = int(motorCurrent);
 }
 
 void calculatePWM()
 {
     // update pid effort min/max
-    pid.setEffort(maxEffort, minEffort);
+    //pid.setEffort(maxEffort, minEffort);
 
     // update gains based on predefined schedule
-    gainScheduling();
+    //gainScheduling();
 
     // calculate the control effort and map it to the current pwm bit resolution
-    pwm = pid.update(setpointCount, currentCount) * pwmMax;
+    contEff = pid.update(motorCurrentSetpoint, motorCurrent);
+    pwm = contEff * pwmMax;
+
+    // calculate pwm from the requested duty cycle
+    // pwm = int(dutyCycle * pwmMax / 100);
+    
+    // windup guard
+    float* ce;
+    ce = pid.returnControlEfforts();
+    maxIntegral = maxEffort - ce[0];
+    pid.constraintIntegral(maxIntegral);
 
     // account for direction change
     if (pwm < 0.0){
@@ -317,58 +259,6 @@ void printValues()
         Serial.print("  PWM: ");
         Serial.println(pwm);
     }
-}
-
-// if a falling edge in signal A is detected
-void fallingEdgeA()
-{
-    state = FastGPIO::Pin<pinB>::isInputHigh();
-    if (state){
-        currentCount ++;
-    }
-    else{
-        currentCount --;
-    }
-    attachInterrupt(digitalPinToInterrupt(pinA), risingEdgeA, RISING);
-}
-
-// if a rising edge in signal A is detected
-void risingEdgeA()
-{
-    state = FastGPIO::Pin<pinB>::isInputHigh();
-    if (state){
-        currentCount --;
-    }
-    else{
-        currentCount ++;
-    }
-    attachInterrupt(digitalPinToInterrupt(pinA), fallingEdgeA, FALLING);
-}
-
-// if a falling edge in signal B is detected
-void fallingEdgeB()
-{
-    state = FastGPIO::Pin<pinA>::isInputHigh();
-    if (state){
-        currentCount --;
-    }
-    else{
-        currentCount ++;
-    }
-    attachInterrupt(digitalPinToInterrupt(pinB), risingEdgeB, RISING);
-}
-
-// if a rising edge in signal Bis detected
-void risingEdgeB()
-{
-    state = FastGPIO::Pin<pinA>::isInputHigh();
-    if (state){
-        currentCount ++;
-    }
-    else{
-        currentCount --;
-    }
-    attachInterrupt(digitalPinToInterrupt(pinB), fallingEdgeB, FALLING);
 }
 
 // configure pwm
@@ -405,64 +295,25 @@ void configPWM()
     }
 }
 
+// modify pwm gains based on an scheduling variable such as motor current
 void gainScheduling()
 {
-    /*
-    before threshSmall, small angle diff gains are used.
-    for very small angles, a multiplier is used over small angle gains
-    between threshSmall and threshLarge, there is a linear transition.
-    After threshLarge, the gain of large angle diff is used
-    */
-    float diff = abs(currentAngle - setpointAngle);
-    if (diff <= threshSmall){
-        if (diff <= threshVerySmall){
-            pid.setGain(pGain*verySmallMultiplier, iGain, dGain);
-        }
-        else{
-            pid.setGain(pGain, iGain, dGain);
-        }
-    }
-    else{
-        if (diff <= threshLarge){
-            float p = pGain + (diff-threshSmall)*((pGainLarge-pGain)/(threshLarge-threshSmall));
-            float i = iGain + (diff-threshSmall)*((iGainLarge-iGain)/(threshLarge-threshSmall));
-            float d = dGain + (diff-threshSmall)*((dGainLarge-dGain)/(threshLarge-threshSmall));
-            pid.setGain(p, i, d);
-        }
-        else{
-            pid.setGain(pGainLarge, iGainLarge, dGainLarge);
-        }
-    }
+
 }
 
 // function to prepare aa data pack for i2c
 void dataPacking()
 {
-    // break motor angle to two bytes
+    // break motor current to two bytes
     buffer[0] = (status.motor.data0 >> 8) & 0xFF;
     buffer[1] = status.motor.data0  & 0xFF;
     // the rest of the data are one byte each
-    buffer[2] = status.motor.data3;
-    buffer[3] = status.motor.data4;
+    //buffer[2] = status.motor.data1;
 }
 
 // function to send out data to master
 void requestEvent()
 {
-    // the following data packing is not used for now to decrease i2c transfer time
-    // byte buffer[sizeOfData];
-    // buffer[0] = (status.motor.data0 >> 8) & 0xFF;
-    // buffer[1] = status.motor.data0  & 0xFF;
-    // buffer[2] = status.motor.data3;
-    // buffer[3] = status.motor.data4;
-    // buffer[2] = (status.motor.data1 >> 8) & 0xFF;
-    // buffer[3] = status.motor.data1  & 0xFF;
-    // buffer[4] = (status.motor.data2 >> 8) & 0xFF;
-    // buffer[5] = status.motor.data2  & 0xFF;
-    // buffer[6] = (status.motor.data3 >> 8) & 0xFF;
-    // buffer[7] = status.motor.data3  & 0xFF;
-    // buffer[8] = status.motor.data4;
-    // buffer[9] = status.motor.data5;
     Wire.write(buffer,sizeOfData); // respond with message of sizeOfData bytes as master expects
 }
 
@@ -481,9 +332,22 @@ void receiveEvent()
 void resetData()
 {
     status.motor.data0 = 0;
-    // status.motor.data1 = 0;
+    //status.motor.data1 = 0;
     // status.motor.data2 = 0;
-    status.motor.data4 = 0;
-    status.motor.data3 = 0;
+    // status.motor.data3 = 0;
+    // status.motor.data4 = 0;
     // status.motor.data5 = 0;
+}
+
+float lowPassFilter(float input, float output, float timeStep, float timeConstant)
+{
+    float value = ((timeStep * input) + (timeConstant * output)) / (timeStep + timeConstant);
+    return value;
+}
+
+void timer()
+{
+    dt = micros() - t;
+    t = micros();
+    //Serial.println(dt);
 }
