@@ -71,7 +71,7 @@ String inString = "";
 float motorCurrent = 0;
 float motorCurrentFiltered = 0;
 float filterConstant = 10000;  //microseconds, 0 means no low pass filter
-uint16_t motorCurrentSetpoint = 300;    // milli amps
+uint16_t motorCurrentSetpoint = 150;    // milli amps
 uint16_t motorCurrentMax = 2000;       // milli amps
 
 // ----------------------- pwm stuff ----------------------
@@ -167,21 +167,7 @@ void loop()
     calculateCurrent();
     calculatePWM();
     dataPacking();
-    commandInterpreter(receivedCommand);
-
-    // if (counter % 500 == 0)
-    // {
-    //     //Serial.print(motorCurrent);Serial.print('\t'); 
-    //     //float* ce;
-    //     //ce = pid.returnControlEfforts();     
-    //     //Serial.print(ce[1]*pwmMax);Serial.print('\t');
-    //     //Serial.print(ce[0]*pwmMax);Serial.print('\t'); 
-    //     Serial.println(motorCurrent); 
-    //     //Serial.println(dt); 
-    //     //Serial.print(motorCurrentFiltered);Serial.print('\t');          
-    //     //Serial.println(pwm);
-    // }  
-    // counter += 1;    
+    commandInterpreter(receivedCommand); 
 }
 
 void readSerial()
@@ -322,9 +308,12 @@ void receiveEvent()
 {
     // clear the buffer
     receivedCommand = "";
-    while (Wire.available() > 0){
+    uint8_t commandLength = Wire.available()-1;
+    for (uint8_t  i = 0; i <= commandLength ; i++){
         char c = Wire.read();
-        receivedCommand += c;
+        if (i > 0){
+            receivedCommand += c;
+        }
     }
 }
 

@@ -6,7 +6,6 @@ void commandInterpreter(String strCommand)
     uint8_t intLength = 1;
     // interpret commands starting with 'g' or 'G'
     if(strCommand.charAt(0)=='G' || strCommand.charAt(0)=='g'){
-
         // read the integer after the command definition. intLength digit(s) int is expected
         uint8_t sub1 = strCommand.substring(1,intLength+1).toInt();
 
