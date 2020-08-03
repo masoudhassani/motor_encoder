@@ -26,10 +26,12 @@ the correct library from https://github.com/masoudhassani/PID
 #include <Wire.h>
 
 // ----------------------- i2c stuff ---------------------------------
-const int deviceAddress = 0x02;
+const int deviceAddress = 0x01;
 String receivedCommand = "";
 const uint8_t sizeOfData = 2;   // motor status data size sent to master
 byte buffer[sizeOfData];
+byte cmdBuffer[2];     // commands coming to motor are 2 bytes
+int clockFrequency = 100000;
 
 // ----------------------- motor and driver setup ----------------------
 const byte pinA = 2;                // this is the intrupt pin and the signal A of encoder
@@ -151,6 +153,7 @@ void setup()
 
     // setup i2c communication
     Wire.begin(deviceAddress);
+    //Wire.setClock(clockFrequency);
     Wire.onRequest(requestEvent);
     Wire.onReceive(receiveEvent);
     resetData();  // reset motor data
@@ -315,6 +318,36 @@ void receiveEvent()
             receivedCommand += c;
         }
     }
+    if (commandLength > 0){
+        motorCurrentSetpoint = receivedCommand.toInt();
+        //Serial.println(receivedCommand);
+    }
+
+    // // clear the buffer
+    // cmdBuffer[0] = 0;
+    // cmdBuffer[1] = 0;
+
+    // // read new buffer
+    // uint8_t commandLength = Wire.available()-1;
+    // for (uint8_t  i = 0; i <= commandLength ; i++){
+    //     if (i > 0){
+    //         cmdBuffer[i] = Wire.read();
+    //         Serial.print(cmdBuffer[i]);Serial.print('\t');
+    //     }
+    //     else
+    //     {
+    //         char c = Wire.read();    // ignore the first byte
+    //     }    
+    // }
+    // Serial.print(cmdBuffer[0]);Serial.print('\t');Serial.println(cmdBuffer[1]);
+    // // reconstruct the 16 bit integer value from 2 bytes
+    // if (commandLength > 0){
+    //     Serial.print(cmdBuffer[0]);Serial.println(cmdBuffer[1]);
+    //     uint16_t setpoint = cmdBuffer[0];
+    //     setpoint = setpoint << 8 | cmdBuffer[1];
+    //     motorCurrentSetpoint = setpoint;
+    //     Serial.println(motorCurrentSetpoint);
+    // }        
 }
 
 // reset/initialize data in the i2c bus
