@@ -32,6 +32,7 @@ const uint8_t sizeOfData = 2;   // motor status data size sent to master
 byte buffer[sizeOfData];
 byte cmdBuffer[2];     // commands coming to motor are 2 bytes
 int clockFrequency = 100000;
+bool directPythonInterface = false;  // True for direct interface with a raspberry pi through i2c
 
 // ----------------------- motor and driver setup ----------------------
 const byte pinA = 2;                // this is the intrupt pin and the signal A of encoder
@@ -310,44 +311,16 @@ void requestEvent()
 void receiveEvent()
 {
     // clear the buffer
-    receivedCommand = "";
-    uint8_t commandLength = Wire.available()-1;
-    for (uint8_t  i = 0; i <= commandLength ; i++){
-        char c = Wire.read();
-        if (i > 0){
-            receivedCommand += c;
-        }
-    }
-    if (commandLength > 0){
-        motorCurrentSetpoint = receivedCommand.toInt();
-        //Serial.println(receivedCommand);
+    byte buffer[2];
+    for (uint8_t i=0; i<2; i++){
+        buffer[i] = Wire.read();
     }
 
-    // // clear the buffer
-    // cmdBuffer[0] = 0;
-    // cmdBuffer[1] = 0;
-
-    // // read new buffer
-    // uint8_t commandLength = Wire.available()-1;
-    // for (uint8_t  i = 0; i <= commandLength ; i++){
-    //     if (i > 0){
-    //         cmdBuffer[i] = Wire.read();
-    //         Serial.print(cmdBuffer[i]);Serial.print('\t');
-    //     }
-    //     else
-    //     {
-    //         char c = Wire.read();    // ignore the first byte
-    //     }    
-    // }
-    // Serial.print(cmdBuffer[0]);Serial.print('\t');Serial.println(cmdBuffer[1]);
-    // // reconstruct the 16 bit integer value from 2 bytes
-    // if (commandLength > 0){
-    //     Serial.print(cmdBuffer[0]);Serial.println(cmdBuffer[1]);
-    //     uint16_t setpoint = cmdBuffer[0];
-    //     setpoint = setpoint << 8 | cmdBuffer[1];
-    //     motorCurrentSetpoint = setpoint;
-    //     Serial.println(motorCurrentSetpoint);
-    // }        
+    // combine two byte to create an integer
+    uint16_t setpoint = buffer[0];
+    setpoint = setpoint << 8 | buffer[1];
+    motorCurrentSetpoint = setpoint;
+    //Serial.println(motorCurrentSetpoint);
 }
 
 // reset/initialize data in the i2c bus
