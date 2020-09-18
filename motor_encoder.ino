@@ -26,7 +26,7 @@ the correct library from https://github.com/masoudhassani/PID
 #include <Wire.h>
 
 // ----------------------- i2c stuff ---------------------------------
-const int deviceAddress = 0x01;
+const int deviceAddress = 0x04;
 String receivedCommand = "";
 const uint8_t sizeOfData = 2;   // motor status data size sent to master
 byte buffer[sizeOfData];
@@ -46,7 +46,7 @@ const byte pinENB = 6;              // motor driver ENB pin
 float gearRatio = 155.563269888;  // this value was corrected based on 16 full rotations
 float ppr = 11;                // pulse per rotation of encoder
 bool  pwmHighRes = true;       // if true, 10 bit pwm is used else 8 bit
-bool  reverseDir = false;
+bool  reverseDir = true;
 
 // ----------------------- counter variables ----------------------
 volatile int32_t currentCount = 0;
