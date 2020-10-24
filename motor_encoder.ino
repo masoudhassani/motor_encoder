@@ -81,8 +81,8 @@ uint16_t motorCurrentMax = 2000;       // milli amps
 float contEff = 0.0;     // control effort between minEffort and maxEffort
 int8_t dutyCycle = 0;    // this ranges from -100 to 100 where - sign means reverse direction. 100 is full speed and 0 is stop
 float pwmMax;
-float minEffort = -0.6;
-float maxEffort = 0.6;
+float minEffort = -1.0;
+float maxEffort = 1.0;
 float pwm = pwmMax * maxEffort;
 float maxIntegral = 1.0*maxEffort;
 float tol = 0.0;
@@ -184,8 +184,8 @@ void readSerial()
         else{
             motorCurrentSetpoint = inString.toInt();
             motorCurrentSetpoint = min(max(motorCurrentSetpoint, 0), motorCurrentMax);
-            Serial.print("current setpoint: "); Serial.println(motorCurrentSetpoint);
-            
+            Serial.print("current setpoint: "); Serial.print(motorCurrentSetpoint); Serial.print('\t');
+            Serial.print("motor current: "); Serial.println(motorCurrent); 
             // clear the string for new input:
             inString = "";
         }
